@@ -30,7 +30,8 @@ logging.basicConfig(
     level=logging.DEBUG,
     filename='main.log',
     filemode='w',
-    format='%(asctime)s, %(levelname)s, %(funcName)s (%(lineno)d), %(message)s, %(name)s'
+    format='''%(asctime)s, %(levelname)s, %(funcName)s (%(lineno)d),
+    %(message)s, %(name)s'''
 )
 
 

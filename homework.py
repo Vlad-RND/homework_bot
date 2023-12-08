@@ -25,14 +25,23 @@ HOMEWORK_VERDICTS = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
-# Не смог пока что разобраться с хендлерами
-logging.basicConfig(
-    level=logging.DEBUG,
-    filename='main.log',
-    filemode='w',
-    format='''%(asctime)s, %(levelname)s, %(funcName)s (%(lineno)d),
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+hendler_for_file = logging.FileHandler(f'{__file__} + .log', mode='w')
+console_hendler = logging.StreamHandler()
+
+formatter = logging.Formatter(
+    '''%(asctime)s, %(levelname)s, %(funcName)s (%(lineno)d),
     %(message)s, %(name)s'''
 )
+
+hendler_for_file.setFormatter(formatter)
+console_hendler.setFormatter(formatter)
+
+logger.addHandler(hendler_for_file)
+logger.addHandler(console_hendler)
 
 
 class CorrectResponceError(Exception):
@@ -55,9 +64,9 @@ def check_tokens():
         (TELEGRAM_CHAT_ID, 'Чат ID')
     )
     check_result = True
-    for token in tokens:
-        if not token[0]:
-            logging.critical(f'Отсутствует {token[1]}')
+    for token, name in tokens:
+        if not token:
+            logging.critical(f'Отсутствует {name}')
             check_result = False
 
     if not check_result:
@@ -84,26 +93,24 @@ def get_api_answer(timestamp):
         'params': {'from_date': timestamp}
     }
     logging.debug(
-        f'Запрос к {request_data["url"]}, параметры - {request_data["params"]}'
+        'Запрос к {url}, параметры - {params}'.format(
+            **request_data
+        )
     )
     try:
-        response = requests.get(
-            request_data['url'],
-            request_data['headers'],
-            request_data['params']
-        )
+        response = requests.get(**request_data)
     except requests.RequestException:
         raise ConnectionError(
-            f'URL - {request_data["url"]}'
-            f'Headers - {request_data["headers"]}'
-            f'Params - {request_data["params"]}'
+            'URL - {url}. Headers - {headers}. Params - {params}.'.format(
+                **request_data
+            )
         )
 
     if response.status_code != HTTPStatus.OK:
         raise CorrectResponceError(
-            f'Status code - {response.status_code}'
-            f'Reason - {response.reason}'
-            f'Text - {response.text}'
+            'Status code {status_code}. Reason {reason}. Text {text}.'.format(
+                **response
+            )
         )
     return response.json()
 
@@ -111,18 +118,17 @@ def get_api_answer(timestamp):
 def check_response(response):
     """Проверяем наличие ДЗ и достаем последнее."""
     logging.debug('Начало проверки ответа от сервиса.')
-    if isinstance(response, dict):
-        if 'homeworks' not in response:
-            raise EmptyResponceError('Homework not in response')
-
-        homeworks = response.get('homeworks')
-
-        if isinstance(homeworks, list):
-            return homeworks
-        else:
-            raise TypeError('Homeworks is not list')
-    else:
+    if not isinstance(response, dict):
         raise TypeError('Response is dict')
+    if 'homeworks' not in response:
+        raise EmptyResponceError('Homework not in response')
+
+    homeworks = response.get('homeworks')
+
+    if not isinstance(homeworks, list):
+        raise TypeError('Homeworks is not list')
+
+    return homeworks
 
 
 def parse_status(homework):
@@ -133,9 +139,8 @@ def parse_status(homework):
     except KeyError as error:
         logging.error(f'Отсутствует статус или имя домашней работы: {error}')
 
-    if status not in HOMEWORK_VERDICTS.keys():
-        logging.error(f'Неверный статус домашней работы: {status}')
-        raise KeyError('Status not in HOMEWORK_VERDICTS')
+    if status not in HOMEWORK_VERDICTS:
+        raise ValueError('Status not in HOMEWORK_VERDICTS')
 
     verdict = HOMEWORK_VERDICTS[status]
 
@@ -148,10 +153,8 @@ def main():
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     timestamp = 0
 
-    messages = {
-        'current_report': '',
-        'prev_report': ''
-    }
+    current_report = ''
+    prev_report = ''
 
     while True:
         try:
@@ -159,22 +162,24 @@ def main():
             homework_list = check_response(response)
             if homework_list:
                 current_homework = homework_list[0]
-                message = parse_status(current_homework)
+                current_report = parse_status(current_homework)
             else:
-                message = 'Нет новых статусов'
+                current_report = 'Нет новых статусов'
 
-            if message != messages['current_report']:
-                if send_message(bot, message):
-                    messages['prev_report'] = messages['current_report']
-                    messages['current_report'] = message
-                    timestamp = response.get('current_date')
+            if current_report != prev_report:
+                if send_message(bot, current_report):
+                    prev_report = current_report
+                    timestamp = response.get('current_date', 0)
                 else:
-                    logging.debug(message)
+                    logging.debug(current_report)
         except EmptyResponceError as error:
             logging.error(f'Пустой ответ от API: {error}')
         except Exception as error:
-            message = f'Сбой в работе программы: {error}'
-            logging.error(message)
+            current_report = f'Сбой в работе программы: {error}'
+            logging.exception(current_report)
+            if current_report != prev_report:
+                send_message(bot, current_report)
+                prev_report = current_report
         finally:
             time.sleep(RETRY_PERIOD)
 

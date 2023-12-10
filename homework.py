@@ -29,7 +29,11 @@ HOMEWORK_VERDICTS = {
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-hendler_for_file = logging.FileHandler(f'{__file__} + .log', mode='w')
+hendler_for_file = logging.FileHandler(
+    __file__ + '.log',
+    mode='w',
+    encoding='utf-8'
+)
 console_hendler = logging.StreamHandler()
 
 formatter = logging.Formatter(
@@ -56,6 +60,12 @@ class EmptyResponceError(Exception):
     pass
 
 
+class TokenIDError(Exception):
+    """Отсутствует токен или ID."""
+
+    pass
+
+
 def check_tokens():
     """Проверка наличия токенов и чат id."""
     tokens = (
@@ -66,22 +76,22 @@ def check_tokens():
     check_result = True
     for token, name in tokens:
         if not token:
-            logging.critical(f'Отсутствует {name}')
+            logger.critical(f'Отсутствует {name}')
             check_result = False
 
     if not check_result:
-        raise Exception('Отсутсвует токен или чат id')
+        raise TokenIDError('Отсутсвует токен или чат id')
 
 
 def send_message(bot, message):
     """Отправка сообщения пользователю."""
     try:
-        logging.debug(f'Попытка отправки сообщения {message}.')
+        logger.debug(f'Попытка отправки сообщения {message}.')
         bot.send_message(TELEGRAM_CHAT_ID, message)
-        logging.debug(f'Сообщение {message} отправлено.')
+        logger.debug(f'Сообщение {message} отправлено.')
         return True
     except telegram.error.TelegramError(message) as error:
-        logging.error(f'Ошибка при отправке сообщения: {error}')
+        logger.error(f'Ошибка при отправке сообщения: {error}')
         return False
 
 
@@ -92,7 +102,7 @@ def get_api_answer(timestamp):
         'headers': HEADERS,
         'params': {'from_date': timestamp}
     }
-    logging.debug(
+    logger.debug(
         'Запрос к {url}, параметры - {params}'.format(
             **request_data
         )
@@ -117,7 +127,7 @@ def get_api_answer(timestamp):
 
 def check_response(response):
     """Проверяем наличие ДЗ и достаем последнее."""
-    logging.debug('Начало проверки ответа от сервиса.')
+    logger.debug('Начало проверки ответа от сервиса.')
     if not isinstance(response, dict):
         raise TypeError('Response is dict')
     if 'homeworks' not in response:
@@ -137,7 +147,7 @@ def parse_status(homework):
         homework_name = homework['homework_name']
         status = homework['status']
     except KeyError as error:
-        logging.error(f'Отсутствует статус или имя домашней работы: {error}')
+        logger.error(f'Отсутствует статус или имя домашней работы: {error}')
 
     if status not in HOMEWORK_VERDICTS:
         raise ValueError('Status not in HOMEWORK_VERDICTS')
@@ -169,14 +179,14 @@ def main():
             if current_report != prev_report:
                 if send_message(bot, current_report):
                     prev_report = current_report
-                    timestamp = response.get('current_date', 0)
-                else:
-                    logging.debug(current_report)
+                    timestamp = response.get('current_date', timestamp)
+            else:
+                logger.debug(current_report)
         except EmptyResponceError as error:
-            logging.error(f'Пустой ответ от API: {error}')
+            logger.error(f'Пустой ответ от API: {error}')
         except Exception as error:
             current_report = f'Сбой в работе программы: {error}'
-            logging.exception(current_report)
+            logger.exception(current_report)
             if current_report != prev_report:
                 send_message(bot, current_report)
                 prev_report = current_report

@@ -6,15 +6,16 @@ import logging
 from dotenv import load_dotenv
 import requests
 import telegram
+from telegram.ext import CommandHandler, Updater
+from telegram import ReplyKeyboardMarkup
 
 load_dotenv()
-
 
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+RETRY_PERIOD = int(os.getenv('RETRY_PERIOD'))
 
-RETRY_PERIOD = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
@@ -157,11 +158,27 @@ def parse_status(homework):
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
+def alive(update, context):
+    """Кнопка для проверки работоспособности бота."""
+    send_message(context.bot, 'Yes!')
+
+
 def main():
     """Основная логика работы бота."""
     check_tokens()
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     timestamp = 0
+
+    updater = Updater(token=TELEGRAM_TOKEN)
+
+    button = ReplyKeyboardMarkup([['/alive']], resize_keyboard=True,)
+    bot.send_message(
+        chat_id=TELEGRAM_CHAT_ID,
+        text='Начинаем работу!',
+        reply_markup=button
+    )
+    updater.dispatcher.add_handler(CommandHandler('alive', alive))
+    updater.start_polling()
 
     current_report = ''
     prev_report = ''
